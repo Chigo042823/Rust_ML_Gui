@@ -1,4 +1,5 @@
 use graphics::{rectangle, Context};
+use ml_library::{layer::Layer, network::Network};
 use opengl_graphics::GlGraphics;
 
 use crate::widget::{Widget, WidgetType};
@@ -11,22 +12,29 @@ pub struct Section {
     pub width: f64,
     pub height: f64,
     pub widgets: Vec<Widget>,
-    pub cost: Vec<f64>
+    pub cost: f64,
+    pub layers: (Vec<Vec<Vec<f64>>>, Vec<Vec<f64>>, Vec<usize>)
 }
 
 impl Section {
-    pub fn new(coords: [f64; 4], width: f64, height: f64, cost: Vec<f64>) -> Self {
+    pub fn new(coords: [f64; 4], width: f64, height: f64) -> Self {
         Section {
             coords,
             width, 
             height,
             widgets: vec![],
-            cost
+            cost: 0.0,
+            layers: (vec![], vec![], vec![])
         }
     }
 
-    pub fn set_widgets(&mut self, widget_count: usize) {
-        let widget_height: f64 = (self.height / widget_count as f64) - PADDING;
+    pub fn set_architecture(&mut self, layers: (Vec<Vec<Vec<f64>>>, Vec<Vec<f64>>, Vec<usize>)) {
+        self.layers = layers;
+    } 
+
+    pub fn set_widgets(&mut self, widgets: &Vec<WidgetType>) {
+        let widget_count = widgets.len();
+        let widget_height: f64 = (self.height / widget_count as f64) - (PADDING * 2.0);
         let widget_width = self.width - (PADDING * 2.0);
 
         let mut widgts = vec![];
@@ -37,7 +45,7 @@ impl Section {
                 coords1[0] - PADDING,
                 coords1[1] - PADDING
             ];
-            widgts.push(Widget::new(coords, widget_width, widget_height, WidgetType::CostPlot, self.cost.clone()));
+            widgts.push(Widget::new(coords, widget_width, widget_height, widgets[i].clone()));
         }
         self.widgets = widgts;
     }
@@ -51,6 +59,12 @@ impl Section {
 
         for i in 0..self.widgets.len() {
             self.widgets[i].render(ctx, gl);
+        }
+    }
+    
+    pub fn update(&mut self, gl: &mut GlGraphics, cost: f64) {
+        for i in 0..self.widgets.len() {
+            self.widgets[i].update(gl, cost, self.layers.clone());
         }
     }
 }
