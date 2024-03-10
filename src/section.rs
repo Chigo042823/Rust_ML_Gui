@@ -1,6 +1,10 @@
+extern crate image;
+
 use graphics::{rectangle, Context};
+use image::{ImageBuffer, Rgb};
 use ml_library::{layer::Layer, network::Network};
 use opengl_graphics::GlGraphics;
+use piston_window::*;
 
 use crate::widget::{Widget, WidgetType};
 
@@ -50,7 +54,7 @@ impl Section {
         self.widgets = widgts;
     }
 
-    pub fn render(&mut self, ctx: Context, gl: &mut GlGraphics) {
+    pub fn render(&mut self, ctx: Context, gl: &mut G2d, window_ctx: &mut G2dTextureContext) {
         let rect = rectangle::rectangle_by_corners(self.coords[0], self.coords[1],
                     self.coords[2] + self.width, self.coords[3] + self.height);
 
@@ -58,13 +62,24 @@ impl Section {
             .draw(rect, &ctx.draw_state, ctx.transform, gl);
 
         for i in 0..self.widgets.len() {
-            self.widgets[i].render(ctx, gl);
+            self.widgets[i].render(ctx, gl, window_ctx);
         }
     }
     
-    pub fn update(&mut self, gl: &mut GlGraphics, cost: f64) {
+    pub fn update(&mut self, 
+        gl: &mut GlGraphics, 
+        cost: f64, epochs: usize, 
+        image_data: Vec<Vec<u8>>,
+        window_ctx: &mut G2dTextureContext
+    ) {
         for i in 0..self.widgets.len() {
-            self.widgets[i].update(gl, cost, self.layers.clone());
+            self.widgets[i].update(gl, 
+                cost, 
+                self.layers.clone(), 
+                epochs, 
+                image_data.clone(),
+                window_ctx
+            );
         }
     }
 }

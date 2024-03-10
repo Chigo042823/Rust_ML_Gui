@@ -1,9 +1,14 @@
-use std::{f64::INFINITY, process::Output, usize};
+extern crate image;
+extern crate opengl_graphics;
 
-use graphics::{rectangle::rectangle_by_corners, *};
-use ml_library::layer::Layer;
-use opengl_graphics::{GlGraphics, GlyphCache, TextureSettings};
-use rand::Rng;
+use std::{f64::INFINITY, path::Path};
+
+use graphics::{glyph_cache::rusttype::GlyphCache, rectangle::{self, rectangle_by_corners}, types::FontSize, Context};
+use image::{ImageBuffer, Rgba};
+use piston_window::*;
+use opengl_graphics::GlGraphics;
+use rusttype::Font;
+
 
 const OUTLINE: [f32; 4] = [0.7, 0.7, 0.7, 1.0];
 const PADDING: f64 = 20.0;
@@ -12,7 +17,8 @@ const LINE_THICKNESS: f64 = 0.7;
 #[derive(Clone)]
 pub enum WidgetType {
     CostPlot,
-    Architecture
+    Architecture,
+    OutputIMG
 }
 
 pub struct Widget {
@@ -21,7 +27,11 @@ pub struct Widget {
     pub height: f64,
     pub widget_type: WidgetType, 
     pub cost: Vec<f64>,
-    pub layers: (Vec<Vec<Vec<f64>>>, Vec<Vec<f64>>, Vec<usize>)
+    pub layers: (Vec<Vec<Vec<f64>>>, Vec<Vec<f64>>, Vec<usize>),
+    pub epochs: usize,
+    pub cost_expiration: bool,
+    pub cost_expiration_epochs: usize,
+    pub image_data: Vec<Vec<u8>>,
 }
 
 impl Widget {
@@ -32,28 +42,101 @@ impl Widget {
             height: height,
             widget_type,
             cost: vec![],
-            layers: (vec![], vec![], vec![])
+            layers: (vec![], vec![], vec![]),
+            epochs: 0,
+            cost_expiration: false,
+            cost_expiration_epochs: 0,
+            image_data: vec![],
         }
     }
 
-    pub fn render(&mut self, ctx: Context, gl: &mut GlGraphics) {
+    pub fn render(&mut self, ctx: Context, gl: &mut G2d, window_ctx: &mut G2dTextureContext) {
         let rect = rectangle::rectangle_by_corners(self.coords[0], self.coords[1],
             self.coords[2] + self.width, self.coords[3] + self.height);
 
         rectangle::Rectangle::new_border(OUTLINE, LINE_THICKNESS)
             .draw(rect, &ctx.draw_state, ctx.transform, gl);
         match self.widget_type {
-            WidgetType::CostPlot => self.draw_costplot(ctx, gl, self.cost.clone()),
+            WidgetType::CostPlot => self.draw_costplot(ctx, gl, self.cost.clone(), window_ctx),
             WidgetType::Architecture => self.draw_architecture(ctx, gl),
+            WidgetType::OutputIMG => self.draw_image(ctx, gl, window_ctx),
         }
     }
 
-    pub fn update(&mut self, gl: &mut GlGraphics, cost: f64, layers: (Vec<Vec<Vec<f64>>>, Vec<Vec<f64>>, Vec<usize>)) {  
-        self.cost.push(cost);
-        self.layers = layers;
+    pub fn set_cost_expiration(&mut self, expire: bool, epochs: usize) {
+        self.cost_expiration = expire;
+        self.cost_expiration_epochs = epochs;
     }
 
-    pub fn draw_costplot(&mut self, ctx: Context, gl: &mut GlGraphics, cost: Vec<f64>) {
+    pub fn pop_cost(&mut self) {
+        let chunk = 100;
+        if self.cost.len() > 0 && self.cost.len() + chunk > chunk * 2 {
+            for _ in 0..chunk {
+                self.cost.remove(0);
+            }
+        }
+    }
+
+    pub fn update(&mut self, 
+        gl: &mut GlGraphics, 
+        cost: f64, 
+        layers: (Vec<Vec<Vec<f64>>>, Vec<Vec<f64>>, Vec<usize>),
+        epochs: usize,
+        image_data: Vec<Vec<u8>>,
+        window_ctx: &mut G2dTextureContext
+    ) {  
+        match self.widget_type {
+            WidgetType::CostPlot => 
+                self.cost.push(cost),
+            _ => ()
+        }
+        self.layers = layers;
+        self.epochs += epochs;
+        self.image_data = image_data;
+
+        if self.epochs % (self.cost_expiration_epochs + 1) == 0 && self.cost_expiration {
+            self.cost.remove(0);
+        }
+    }
+
+    pub fn draw_image(&mut self, ctx: Context, gl: &mut G2d, window_ctx: &mut G2dTextureContext) {
+        if self.image_data.len() != 0 {
+
+            let image_path = "mnist_0.png";
+            let w = 28;
+            let h = 28;
+
+            let base_image = image::open(&Path::new(image_path)).unwrap().to_rgba8();
+
+            let output_image = ImageBuffer::from_fn(w, h, |x, y| {
+                let pix = self.image_data[y as usize][x as usize];
+                Rgba([pix, pix, pix, 255]) // Varying colors in a gradient
+            });
+            
+            // Create a texture from the image data
+            let output_texture = piston_window::Texture::from_image(
+                window_ctx,
+                &output_image,
+                &TextureSettings::new(),
+            ).unwrap();
+
+            // Create a texture from the image data
+            let base_texture = piston_window::Texture::from_image(
+                window_ctx,
+                &base_image,
+                &TextureSettings::new(),
+            ).unwrap();
+
+            let scale = 4.0;
+            let x = (self.coords[0] + (self.width / 2.0));
+            let y = (self.coords[1] + (self.height / 2.0)) - (2.0 * h as f64);
+
+            piston_window::image(&output_texture, ctx.transform.trans(x, y).zoom(scale), gl);
+            piston_window::image(&base_texture, ctx.transform.trans(x - (scale * w as f64), y).zoom(scale), gl);
+        }
+    }
+
+    pub fn draw_costplot(&mut self, ctx: Context, gl: &mut G2d, cost: Vec<f64>, window_ctx: &mut G2dTextureContext) {
         let floor = self.coords[1] + self.height - PADDING * 2.0;
         let wall = self.coords[0] + PADDING;
         let min_coord = [wall, floor];
@@ -76,18 +159,6 @@ impl Widget {
 
         let mut line_color: [f32; 4] = [0.0, 0.8, 0.0, 1.0];
 
-        let mut glyphs = GlyphCache::new("assets/BebasNeue-Regular.ttf", (), TextureSettings::new()).unwrap();
-
-        let cost_text = "Cost: ".to_owned() + &cost[cost.len() - 1].to_string();
-
-        let epochs_text: String = "Epochs: ".to_owned() + &(cost.len() * 10).to_string();
-
-        let _ = text::Text::new_color(OUTLINE, 20).draw_pos(&cost_text,
-            [y_max_coord[0], y_max_coord[1] - PADDING / 2.0], &mut glyphs, &ctx.draw_state, ctx.transform, gl);
-
-        let _ = text::Text::new_color(OUTLINE, 20).draw_pos(&epochs_text,
-                [self.width / 2.0, y_max_coord[1] - PADDING / 2.0], &mut glyphs, &ctx.draw_state, ctx.transform, gl);
-
         for i in 0..cost_count as usize{
             //TODO fix x coordinate calculation
             line_color[0] = (cost[i] / max_cost) as f32;
@@ -100,7 +171,7 @@ impl Widget {
         }
     }
 
-    pub fn draw_architecture(&mut self, ctx: Context, gl: &mut GlGraphics) {
+    pub fn draw_architecture(&mut self, ctx: Context, gl: &mut G2d) {
 
         let layer_nodes = self.layers.2.clone();
         let weights = self.layers.0.clone();
