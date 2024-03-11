@@ -197,7 +197,7 @@ impl GUI<'_> {
 
         for y in 0..new_image.len() as usize {
             for x in 0..new_image[y].len() as usize {
-                let inputs = vec![(x + 1) as f64 / 28 as f64, (y + 1) as f64 / 28 as f64];
+                let inputs = vec![x as f64 / 27 as f64, y as f64 / 27 as f64];
                 // let inputs = vec![x as f64, y as f64];
                 let int = (self.nn.forward(inputs)[0] * 255.0) as u8;
                 new_image[y][x] = int;

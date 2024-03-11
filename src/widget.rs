@@ -95,14 +95,16 @@ impl Widget {
         self.image_data = image_data;
 
         if self.epochs % (self.cost_expiration_epochs + 1) == 0 && self.cost_expiration {
-            self.cost.remove(0);
+            if self.cost.len() != 0 {
+                self.cost.remove(0);
+            }
         }
     }
 
     pub fn draw_image(&mut self, ctx: Context, gl: &mut G2d, window_ctx: &mut G2dTextureContext) {
         if self.image_data.len() != 0 {
 
-            let image_path = "mnist_0.png";
+            let image_path = "mnist_8.png";
             let w = 28;
             let h = 28;
 
