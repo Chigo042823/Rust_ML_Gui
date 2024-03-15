@@ -1,9 +1,6 @@
 extern crate image;
 
 use graphics::{rectangle, Context};
-use image::{ImageBuffer, Rgb};
-use ml_library::{layer::Layer, network::Network};
-use opengl_graphics::GlGraphics;
 use piston_window::*;
 
 use crate::widget::{Widget, WidgetType};
@@ -67,18 +64,31 @@ impl Section {
     }
     
     pub fn update(&mut self, 
-        gl: &mut GlGraphics, 
-        cost: f64, epochs: usize, 
-        image_data: Vec<Vec<u8>>,
-        window_ctx: &mut G2dTextureContext
+        cost: f64, 
+        epochs: usize, 
+        image_data: &Vec<Vec<u8>>,
+        nn_graph: Vec<f64>
     ) {
         for i in 0..self.widgets.len() {
-            self.widgets[i].update(gl, 
+            let widget = &mut self.widgets[i];
+            let mut layers: (Vec<Vec<Vec<f64>>>, Vec<Vec<f64>>, Vec<usize>) = (vec![], vec![], vec![]);
+            let mut img = vec![];
+            let mut nn_line = vec![];
+            if widget.widget_type == WidgetType::Architecture {
+                layers = self.layers.clone();
+            } 
+            if widget.widget_type == WidgetType::OutputImg {
+                img = image_data.clone();
+            }
+            if widget.widget_type == WidgetType::OutputGraph {
+                nn_line = nn_graph.clone();
+            }
+            widget.update(
                 cost, 
-                self.layers.clone(), 
+                layers, 
                 epochs, 
-                image_data.clone(),
-                window_ctx
+                img,
+                nn_line
             );
         }
     }
