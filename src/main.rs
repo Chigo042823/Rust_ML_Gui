@@ -5,42 +5,48 @@ use WidgetType::*;
 
 fn main() {
     let layers: Vec<Layer> = vec![
-        Layer::new(1, 4, Dense, ml_library::activation::ActivationFunction::Sigmoid),
-        Layer::new(4, 4, Dense, ml_library::activation::ActivationFunction::Sigmoid),
-        Layer::new(4, 1, Dense, ml_library::activation::ActivationFunction::Sigmoid),
+        Layer::new(2, 10, Dense, ml_library::activation::ActivationFunction::Sigmoid),
+        Layer::new(10, 10, Dense, ml_library::activation::ActivationFunction::Sigmoid),
+        Layer::new(10, 1, Dense, ml_library::activation::ActivationFunction::Sigmoid),
     ];
 
-    let mut nn = Network::new(layers, 0.007, 2);
+    let nn = Network::new(layers, 0.02, 2);
     let sections: Vec<Vec<WidgetType>> = vec![
-        vec![OutputGraph],
+        vec![OutputImg, CostPlot], 
+        vec![Architecture], 
     ];
 
-    let xor_data: Vec<[Vec<f64>; 2]> = vec![
+    // nn.load_model("8Model");
+
+    let mut app = GUI::new(nn);
+    app.set_sections(sections);
+    app.set_epochs_per_second(50);
+    app.set_cost_expiration(false, 20);
+    app.set_model_name("6Model");
+    app.x_range = [-10.0, 10.0];
+    // sin_model(&mut app);
+    digit_model(app);
+    // xor_model(&mut app);
+    // upscale_img(&mut nn, [500, 500]);
+}
+
+pub fn xor_model(app: &mut GUI) {
+
+    let data: Vec<[Vec<f64>; 2]> = vec![
         [vec![1.0, 0.0], vec![0.0]],
         [vec![0.0, 0.0], vec![1.0]],
         [vec![1.0, 1.0], vec![1.0]],
         [vec![0.0, 1.0], vec![0.0]],
     ]; 
 
-    // nn.load_model("8Model");
-
-    let mut app = GUI::new(nn);
-    app.set_sections(sections);
-    app.set_epochs_per_second(20);
-    app.set_cost_expiration(false, 20);
-    app.set_model_name("Image0Model");
-    app.x_range = [-10.0, 10.0];
-    // app.set_data(xor_data);
-    // app.run();
-    sin_model(&mut app);
-    // digit_model(app);
-    // upscale_img(&mut nn, [500, 500]);
+    app.set_data(data);
+    app.run();
 }
 
 pub fn digit_model(mut app: GUI) {
     let mut data: Vec<[Vec<f64>; 2]> = vec![];
 
-    let img = image::open("mnist_0.png").unwrap();
+    let img = image::open("mnist_6.png").unwrap();
 
     let dims = img.dimensions();
 
@@ -62,7 +68,7 @@ pub fn digit_model(mut app: GUI) {
 pub fn sin_model(app: &mut GUI) {
 
     let mut func_outputs = vec![];
-    let increment = 0.01;
+    let increment = 0.1;
     let mut counter = app.x_range[0];
 
     while counter < app.x_range[1] {

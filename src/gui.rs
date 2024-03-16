@@ -11,63 +11,72 @@ use rusttype::Font;
 use memory_stats::memory_stats;
 use std::thread::{self, Thread};
 use std::time::Duration;
+use gfx_device_gl::Device;
 
 use crate::{section::Section, widget::WidgetType};
-
-const PADDING: f64 = 10.0;
-const HEADER: f64 = 70.0;
 
 pub struct GUI<'a> {
     pub window: PistonWindow,
     pub gl: GlGraphics,
+    pub padding: [f64; 2],
+    pub header: f64,
+    pub sidebar: [f64; 2],
     pub sections: Vec<Section>,
     pub nn: Network,
     pub data: Vec<[Vec<f64>; 2]>,
     pub epochs_per_second: usize,
     pub epochs: usize,
-    pub image_data: Vec<Vec<u8>>,
     pub font: Font<'a>,
     pub model_name: String,
-    pub x_range: [f64; 2]
+    pub x_range: [f64; 2],
+    pub will_train: bool
 }
 
 impl GUI<'_> {
     pub fn new(nn: Network) -> Self {
-        let window = WindowSettings::new("GUI", [720, 480])
+        let window: PistonWindow = WindowSettings::new("GUI", [720, 500])
         .exit_on_esc(true)
         .build()
         .unwrap();
+        
+        let dims = window.draw_size();
 
         let font = Font::try_from_bytes(
             include_bytes!("../assets/BebasNeue-Regular.ttf")).unwrap();
-
+        
+        let padding = [dims.width * 0.02, dims.height * 0.02];
+        let header = dims.height * 0.12;
         GUI {
             window,
             gl: GlGraphics::new(OpenGL::V3_2),
             sections: vec![],
+            padding,
+            header,
+            sidebar: [dims.width * 0.2, dims.height - padding[1] - header],
             nn,
             data: vec![],
             epochs_per_second: 1,
             epochs: 0,
-            image_data: vec![],
             font,
             model_name: "Model".to_string(),
-            x_range: [-1.0, 1.0]
+            x_range: [-1.0, 1.0],
+            will_train: true
         }
     }
 
     pub fn set_sections(&mut self, sections: Vec<Vec<WidgetType>>) {
         let section_count = sections.len();
-        let section_width = self.window.draw_size().width / section_count as f64;
-        let section_height = self.window.draw_size().height - HEADER;
+        let section_width = ((self.window.draw_size().width - self.sidebar[0]) / section_count as f64) - self.padding[0];
+        let section_height = ((self.window.draw_size().height) - self.header) - self.padding[1];
 
         let mut sects = vec![];
+
         for i in 0..section_count {
-            let coords1 = [section_width * i as f64, HEADER];
-            let coords = [coords1[0] + PADDING,
-                coords1[1] + PADDING,
-                coords1[0] - PADDING,
-                coords1[1] - PADDING
+            let coords1 = [(section_width * i as f64) + self.padding[0] + self.sidebar[0], self.header];
+            let coords = [coords1[0] + self.padding[0],
+                coords1[1] + self.padding[1],
+                coords1[0] - self.padding[0],
+                coords1[1] - self.padding[1]
             ];
             sects.push(Section::new(coords, section_width, section_height));
             sects[i].set_widgets(&sections[i]);
@@ -84,33 +93,44 @@ impl GUI<'_> {
     }
 
     pub fn render(&mut self, evts: &Event, args: RenderArgs, window_ctx: &mut G2dTextureContext) {
+
         let mut glyphs = self.window.load_font("assets/BebasNeue-Regular.ttf").unwrap();
+        let wall = self.padding[0];
+        let line_space = self.padding[1] * 4.0;
+        let window_dims = self.window.draw_size();
 
         self.window.draw_2d(evts, |ctx, gl, device| {
             clear([0.3, 0.3, 0.3, 1.0], gl);
 
-            let _ = text::Text::new_color([1.0, 1.0, 1.0, 1.0], 20).draw(
-                &format!("Cost: {}", self.nn.cost),
-                &mut glyphs,
-                &ctx.draw_state,
-                ctx.transform.trans(PADDING * 4.0, PADDING * 4.0), gl
-            );
+        let _ = text::Text::new_color([1.0, 1.0, 1.0, 1.0], 40).round().draw(
+            &"NetFix",
+            &mut glyphs,
+            &ctx.draw_state,
+            ctx.transform.trans((window_dims.width/2.0) - 40.0, (self.header/2.0) + 20.0), gl
+        );
 
-            let _ = text::Text::new_color([1.0, 1.0, 1.0, 1.0], 20).draw(
-                &format!("Epochs: {}", self.epochs),
-                &mut glyphs,
-                &ctx.draw_state,
-                ctx.transform.trans(PADDING * 30.0, PADDING * 4.0), gl
-            );
+        let _ = text::Text::new_color([1.0, 1.0, 1.0, 1.0], 18).draw(
+            &format!("Cost: {}", self.nn.cost as f32),
+            &mut glyphs,
+            &ctx.draw_state,
+            ctx.transform.trans(wall, self.header + self.padding[1] * 4.0), gl
+        );
 
-            let _ = text::Text::new_color([1.0, 1.0, 1.0, 1.0], 20).draw(
-                &format!("Batch Size: {}", self.nn.batch_size),
-                &mut glyphs,
-                &ctx.draw_state,
-                ctx.transform.trans(PADDING * 45.0, PADDING * 4.0), gl
-            );
+        let _ = text::Text::new_color([1.0, 1.0, 1.0, 1.0], 18).draw(
+            &format!("Epochs: {}", self.epochs),
+            &mut glyphs,
+            &ctx.draw_state,
+            ctx.transform.trans(wall, (self.header + self.padding[1] * 4.0) + line_space * 1.0), gl
+        );
 
-            glyphs.factory.encoder.flush(device);
+        let _ = text::Text::new_color([1.0, 1.0, 1.0, 1.0], 18).draw(
+            &format!("Learning Rate: {}", self.nn.learning_rate),
+            &mut glyphs,
+            &ctx.draw_state,
+            ctx.transform.trans(wall, (self.header + self.padding[1] * 4.0) + line_space * 2.0), gl
+        );
+
+        glyphs.factory.encoder.flush(device);
 
             for i in 0..self.sections.len() {
                 self.sections[i].render(ctx, gl, window_ctx);
@@ -120,13 +140,11 @@ impl GUI<'_> {
 
     pub fn set_data(&mut self, data: Vec<[Vec<f64>; 2]>) {
         self.data = data;
-        let expected_img = self.get_expected_img();
         for i in 0..self.sections.len() {
-            for j in 0..self.sections[i].widgets.len() {
-                let widget = &mut self.sections[i].widgets[j];
-                if widget.widget_type == WidgetType::OutputImg {
-                    widget.expected_image = expected_img.clone();
-                }
+            let section = &mut self.sections[i];
+            for j in 0..section.widgets.len() {
+                let widget = &mut section.widgets[j];
+                widget.set_data(self.data.clone());
             }
         }
     }
@@ -168,21 +186,21 @@ impl GUI<'_> {
             }
 
             if let Some(args) = e.update_args() {
-                self.nn.train(self.data.clone(), self.epochs_per_second);
-                self.image_data = self.get_network_img();
-                self.epochs += self.epochs_per_second;
-                for i in 0..self.sections.len() {
-                    let weights = self.nn.get_weights();
-                    let biases = self.nn.get_biases();
-                    let nodes = self.nn.get_nodes();
-                    let network_graph = self.get_network_graph();
-                    self.sections[i].set_architecture((weights, biases, nodes));
-                    self.sections[i].update(
-                        self.nn.cost, 
-                        self.epochs_per_second, 
-                        &self.image_data,
-                        network_graph
-                    );
+                if self.will_train {
+                    self.nn.train(self.data.clone(), self.epochs_per_second);
+                    self.epochs += self.epochs_per_second;
+                    let nn_data = self.get_network_outputs();
+                    for i in 0..self.sections.len() {
+                        let weights = self.nn.get_weights();
+                        let biases = self.nn.get_biases();
+                        let nodes = self.nn.get_nodes();
+                        self.sections[i].set_architecture((weights, biases, nodes));
+                        self.sections[i].update(
+                            self.nn.cost, 
+                            self.epochs_per_second, 
+                            nn_data.clone()
+                        );
+                    }
                 }
             }
 
@@ -213,6 +231,14 @@ impl GUI<'_> {
                             self.nn.load_model(&self.model_name);
                             println!("{} Loaded Succesfully!", self.model_name);
                         },
+                    Key::Space =>
+                        {
+                            if self.will_train {
+                                self.will_train = false;
+                            } else {
+                                self.will_train = true;
+                            }
+                        },
                     _ => 
                         println!("No Function Associated With That Button"),
                 }
@@ -233,14 +259,11 @@ impl GUI<'_> {
         self.nn.reset();
     }
 
-    fn get_network_graph(&mut self) -> Vec<f64> {
-        let increment = 0.01;
-        let mut counter = self.x_range[0];
+    fn get_network_outputs(&mut self) -> Vec<Vec<f64>> {
         let mut outputs = vec![];
-
-        while counter <= self.x_range[1] {
-            outputs.push(self.nn.forward(vec![counter])[0]);
-            counter += increment;
+        for i in 0..self.data.len() {
+            let out = self.nn.forward(self.data[i][0].clone());
+            outputs.push(out);
         }
         outputs
     }

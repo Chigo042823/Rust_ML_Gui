@@ -9,7 +9,6 @@ use piston_window::*;
 use WidgetType::*;
 
 const OUTLINE: [f32; 4] = [0.7, 0.7, 0.7, 1.0];
-const PADDING: f64 = 20.0;
 const LINE_THICKNESS: f64 = 0.7;
 
 #[derive(Clone, PartialEq)]
@@ -30,9 +29,11 @@ pub struct Widget {
     pub epochs: usize,
     pub cost_expiration: bool,
     pub cost_expiration_epochs: usize,
-    pub image_data: Vec<Vec<u8>>,
-    pub expected_image: Vec<Vec<u8>>,
-    pub nn_line: Vec<f64>
+    pub expected_data: Vec<[Vec<f64>; 2]>,
+    pub max_expected_data: f64,
+    pub nn_data: Vec<Vec<f64>>,
+    pub max_nn_data: u64,
+    pub padding: [f64; 2]
 }
 
 impl Widget {
@@ -47,9 +48,11 @@ impl Widget {
             epochs: 0,
             cost_expiration: false,
             cost_expiration_epochs: 0,
-            image_data: vec![],
-            expected_image: vec![],
-            nn_line: vec![]
+            expected_data: vec![],
+            max_expected_data: 0.0,
+            nn_data: vec![],
+            max_nn_data: 0,
+            padding: [width *0.05, height * 0.05]
         }
     }
 
@@ -63,8 +66,13 @@ impl Widget {
             CostPlot => self.draw_costplot(ctx, gl),
             Architecture => self.draw_architecture(ctx, gl),
             OutputImg => self.draw_image(ctx, gl, window_ctx),
-            OutputGraph => self.draw_output_graph(ctx, gl, |x: &f64| x.sin())
+            OutputGraph => self.draw_output_graph(ctx, gl)
         }   
+    }
+
+    pub fn set_data(&mut self, data: Vec<[Vec<f64>; 2]>) {
+        self.expected_data = data;
+        self.max_expected_data = Self::get_max_output(&self.expected_data);
     }
 
     pub fn set_cost_expiration(&mut self, expire: bool, epochs: usize) {
@@ -85,8 +93,7 @@ impl Widget {
         cost: f64, 
         layers: (Vec<Vec<Vec<f64>>>, Vec<Vec<f64>>, Vec<usize>),
         epochs: usize,
-        image_data: Vec<Vec<u8>>,
-        nn_line: Vec<f64>
+        nn_data: Vec<Vec<f64>>
     ) {  
         match self.widget_type {
             CostPlot => 
@@ -95,8 +102,8 @@ impl Widget {
         }
         self.layers = layers;
         self.epochs += epochs;
-        self.image_data = image_data;
-        self.nn_line = nn_line;
+        self.nn_data = nn_data;
+        self.max_nn_data = self.nn_data.iter().map(|x| (x[0] * 100_000.0) as u64).max().unwrap();
 
         if self.epochs % (self.cost_expiration_epochs + 1) == 0 && self.cost_expiration {
             if self.cost.len() != 0 {
@@ -106,92 +113,95 @@ impl Widget {
     }
 
     pub fn draw_image(&mut self, ctx: Context, gl: &mut G2d, window_ctx: &mut G2dTextureContext) {
-        if self.image_data.len() != 0 {
 
-            let expected_image = &self.expected_image;
-
-            let w = expected_image[0].len() as u32;
-            let h = expected_image.len() as u32;
-
-            let base_image = ImageBuffer::from_fn(w, h, |x, y| {
-                let pix = expected_image[y as usize][x as usize];
-                Rgba([pix, pix, pix, 255]) // Varying colors in a gradient
-            });
-
-            let output_image = ImageBuffer::from_fn(w, h, |x, y| {
-                let pix = self.image_data[y as usize][x as usize];
-                Rgba([pix, pix, pix, 255]) // Varying colors in a gradient
-            });
-            
-            // Create a texture from the image data
-            let output_texture = piston_window::Texture::from_image(
-                window_ctx,
-                &output_image,
-                &TextureSettings::new(),
-            ).unwrap();
-
-            // Create a texture from the image data
-            let base_texture = piston_window::Texture::from_image(
-                window_ctx,
-                &base_image,
-                &TextureSettings::new(),
-            ).unwrap();
-
-            let scale = 5.0;
-            let x = self.coords[0] + (self.width / 2.0) - (PADDING * 0.5);
-            let y = (self.coords[1] + (self.height / 2.0)) - (2.0 * h as f64);
-
-            piston_window::image(&output_texture, ctx.transform.trans(x, y).zoom(scale), gl);
-            piston_window::image(&base_texture, ctx.transform.trans(x - (scale * w as f64), y).zoom(scale), gl);
-        }
-    }
-
-    pub fn draw_output_graph<F>(&mut self, ctx: Context, gl: &mut G2d, func: F) 
-    where
-        F: Fn(&f64) -> f64
-    {
-
-        if self.nn_line.len() == 0 as usize {
+        if self.expected_data.len() == 0 as usize || self.nn_data.len() == 0 as usize {
             return;
         }
 
-        let floor = self.coords[1] + self.height - PADDING * 2.0;
-        let wall = self.coords[0] + PADDING;
+        let expected_image = &self.expected_data;
+        let nn_image = &self.nn_data;
+
+        let (w, h) = (28, 28);
+        let mut img_i = 0;
+
+        let base_image = ImageBuffer::from_fn(w, h, |x, y| {
+            let pix = (expected_image[img_i][1][0] * 255.0) as u8;
+            img_i += 1;
+            Rgba([pix, pix, pix, 255]) // Varying colors in a gradient
+        });
+
+        img_i = 0;
+
+        let output_image = ImageBuffer::from_fn(w, h, |x, y| {
+            let pix = (nn_image[img_i][0] * 255.0) as u8;
+            img_i += 1;
+            Rgba([pix, pix, pix, 255]) // Varying colors in a gradient
+        });
+        
+        // Create a texture from the image data
+        let output_texture = piston_window::Texture::from_image(
+            window_ctx,
+            &output_image,
+            &TextureSettings::new(),
+        ).unwrap();
+
+        // Create a texture from the image data
+        let base_texture = piston_window::Texture::from_image(
+            window_ctx,
+            &base_image,
+            &TextureSettings::new(),
+        ).unwrap();
+
+        let w_scale = (((self.width * 1.5 - self.padding[0] * 2.0) / 2.0) / w as f64) / 2.0;
+        let h_scale = ((self.height * 1.5 - self.padding[1] * 2.0) / 2.0) / h as f64;
+
+        let x = self.coords[0] + (self.width / 2.0) - (w_scale * w as f64) - self.padding[0];
+        let y = (self.coords[1] + (self.height / 2.0)) - (h_scale * h as f64) / 1.5;
+
+        piston_window::image(&output_texture, ctx.transform.trans(x + (w_scale * w as f64), y).scale(w_scale, h_scale), gl);
+        piston_window::image(&base_texture, ctx.transform.trans(x, y).scale(w_scale, h_scale), gl);
+    }
+
+    pub fn draw_output_graph(&mut self, ctx: Context, gl: &mut G2d) 
+    {
+
+        if self.expected_data.len() == 0 as usize || self.nn_data.len() == 0 as usize {
+            return;
+        }
+        
+        let floor = self.coords[1] + self.height - self.padding[1] * 2.0;
+        let wall = self.coords[0] + self.padding[0];
         let min_coord = [wall, floor];
-        let y_max_coord = [wall, self.coords[1] + PADDING];
-        let x_max_coord = [self.coords[0] + self.width - PADDING, floor];
+        let y_max_coord = [wall, self.coords[1] + self.padding[1]];
+        let x_max_coord = [self.coords[0] + self.width - self.padding[0], floor];
         line_from_to(OUTLINE, LINE_THICKNESS, y_max_coord, min_coord, ctx.transform, gl);
         line_from_to(OUTLINE, LINE_THICKNESS, x_max_coord, min_coord, ctx.transform, gl);
 
         let y_range = [-1.0, 1.0];
         let x_range = [-10.0, 10.0];
-        let increment = 0.01;
+        let increment = 0.1;
         let mut counter = x_range[0];
-        let mut network_counter = 0;
+        let mut index = 0;
 
-        let mut expected_color: [f32; 4] = [0.0, 0.8, 0.0, 1.0];
-        let mut nn_color: [f32; 4] = [0.0, 0.0, 0.8, 1.0];
-
-        let mut func_outputs = vec![];
-
-        while counter <= x_range[1] {
-            func_outputs.push(func(&counter));
-            counter += increment;
-        }
+        let expected_color: [f32; 4] = [0.0, 0.8, 0.0, 1.0];
+        let nn_color: [f32; 4] = [0.0, 0.0, 0.8, 1.0];
 
         counter = x_range[0];
 
-        let max_output = Self::get_max_cost(&func_outputs) + 1.0;
+        let expected_data = &self.expected_data;
+        let nn_data = &self.nn_data;
+
+        let max_expected_output = self.max_expected_data + 1.0;
         
-        let expected_y = (func(&x_range[0]) + 1.0) / max_output;
-        let network_y = (self.nn_line [0] + 1.0) / max_output;
+        let expected_y = (expected_data[0][1][0] + 1.0) / max_expected_output;
+        let network_y = (nn_data[0][0] + 1.0) / max_expected_output;
 
         let mut last_expected_point = [y_max_coord[0], expected_y];
         let mut last_network_point = [y_max_coord[0], network_y];
 
         while counter < x_range[1] {
             let next_expected_x = y_max_coord[0] + ((counter / x_range[1]) * (x_max_coord[0] - y_max_coord[0]));
-            let next_expected_y =  x_max_coord[1] + (((func(&counter) + 1.0) / max_output) * (y_max_coord[1] - x_max_coord[1]));
+            let next_expected_y =  x_max_coord[1] - ((expected_data[index][1][0] + 1.0) / max_expected_output) * (x_max_coord[1] - y_max_coord[1]);
             let next_expected_point = [next_expected_x, next_expected_y];
             if (next_expected_y < floor && next_expected_y > y_max_coord[1]) &&
                 (next_expected_x > wall && next_expected_x < x_max_coord[0])
@@ -201,7 +211,7 @@ impl Widget {
             last_expected_point = next_expected_point;
 
             let next_network_x = y_max_coord[0] + ((counter / x_range[1]) * (x_max_coord[0] - y_max_coord[0]));
-            let next_network_y =  x_max_coord[1] + (((self.nn_line[network_counter] + 1.0) / max_output) * (y_max_coord[1] - x_max_coord[1]));
+            let next_network_y =  x_max_coord[1] - ((nn_data[index][0] + 1.0) / max_expected_output) * (x_max_coord[1] - y_max_coord[1]);
             let next_network_point = [next_network_x, next_network_y];
             if (next_network_y < floor && next_network_y > y_max_coord[1]) &&
                 (next_network_x > wall && next_network_x < x_max_coord[0])
@@ -211,18 +221,18 @@ impl Widget {
             last_network_point = next_network_point;
 
             counter += increment;
-            network_counter += 1;
+            index += 1;
         }
     }
 
     pub fn draw_costplot(&mut self, ctx: Context, gl: &mut G2d) {
         let cost = &self.cost;
 
-        let floor = self.coords[1] + self.height - PADDING * 2.0;
-        let wall = self.coords[0] + PADDING;
+        let floor = self.coords[3] + self.height - self.padding[1];
+        let wall = self.coords[0] + self.padding[0];
         let min_coord = [wall, floor];
-        let y_max_coord = [wall, self.coords[1] + (PADDING * 2.0)];
-        let x_max_coord = [self.coords[0] + self.width - PADDING * 2.0, floor];
+        let y_max_coord = [wall, self.coords[1] + (self.padding[1] * 2.0)];
+        let x_max_coord = [self.coords[2] + self.width - self.padding[0], floor];
         line_from_to(OUTLINE, LINE_THICKNESS, y_max_coord, min_coord, ctx.transform, gl);
         line_from_to(OUTLINE, LINE_THICKNESS, x_max_coord, min_coord, ctx.transform, gl);
 
@@ -261,18 +271,18 @@ impl Widget {
         let mut neuron_color = [0.7, 0.7, 0.0, 1.0];
         let mut weight_color = [0.7, 0.7, 0.0, 1.0];
 
-        let floor = self.coords[1] + self.height - (PADDING * 0.5);
-        let wall = self.coords[0] + (PADDING * 2.0);
+        let floor = self.coords[1] + self.height - (self.padding[1] * 0.5);
+        let wall = self.coords[0] + (self.padding[0] * 2.0);
         let y_center = floor - (self.height / 2.0);
         let x_center = wall + (self.width / 2.0);
 
         let max_nodes = Self::get_max_nodes(&layer_nodes) as f64;
         let neuron_size =  50.0 * ((((self.width / ctx.get_view_size()[0]) + (self.height / ctx.get_view_size()[1])) / 2.0) / max_nodes);
-        let network_width = self.width +  -(PADDING * 2.0) + -(neuron_size * 2.0);
+        let network_width = self.width +  -(self.padding[0] * 2.0) + -(neuron_size * 2.0);
         let layer_width = network_width / layer_nodes.len() as f64;
 
         for i in 0..layer_nodes.len() { //layers
-            let layer_height =  ((self.height - (PADDING * 2.0)) - (layer_nodes[i] as f64 * neuron_size)) * (layer_nodes[i] as f64 / max_nodes);
+            let layer_height =  ((self.height - (self.padding[1] * 2.0)) - (layer_nodes[i] as f64 * neuron_size)) * (layer_nodes[i] as f64 / max_nodes);
 
             let neuron_spacing = layer_height / layer_nodes[i] as f64;
 
@@ -292,7 +302,7 @@ impl Widget {
                     ellipse::Ellipse::new(neuron_color).draw(rect, &ctx.draw_state, ctx.transform, gl);
 
                 if i + 1 != layer_nodes.len() {
-                    let next_layer_height = ((self.height - (PADDING * 2.0)) - (layer_nodes[i + 1] as f64 * neuron_size)) * (layer_nodes[i + 1] as f64 / max_nodes);
+                    let next_layer_height = ((self.height - (self.padding[1] * 2.0)) - (layer_nodes[i + 1] as f64 * neuron_size)) * (layer_nodes[i + 1] as f64 / max_nodes);
                     for k in 0..layer_nodes[i + 1] { //next nodes
                         let val = Self::sigmoid(weights[i][j][k]);
                         weight_color[0] = 1.0 - val;
@@ -332,6 +342,18 @@ impl Widget {
         for i in 0..cost.len() {
             if cost[i] > max {
                 max = cost[i];
+            }
+        }
+        max
+    }
+
+    fn get_max_output(outputs: &Vec<[Vec<f64>; 2]>) -> f64 {
+        let mut max = -INFINITY;
+        for i in 0..outputs.len() {
+            for j in 0..outputs[i][1].len() { 
+                if outputs[i][1][j] > max {
+                    max = outputs[i][1][j];
+                }
             }
         }
         max
