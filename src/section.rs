@@ -36,7 +36,7 @@ impl Section {
 
     pub fn set_widgets(&mut self, widgets: &Vec<WidgetType>) {
         let widget_count = widgets.len();
-        let widget_height: f64 = (self.height / widget_count as f64) - (self.padding[1]);
+        let widget_height: f64 = (self.height / widget_count as f64) - (self.padding[1] * 1.0);
         let widget_width = self.width - (self.padding[0] * 2.0);
 
         let mut widgts = vec![];

@@ -29,8 +29,9 @@ pub struct Widget {
     pub epochs: usize,
     pub cost_expiration: bool,
     pub cost_expiration_epochs: usize,
-    pub expected_data: Vec<[Vec<f64>; 2]>,
-    pub max_expected_data: f64,
+    pub expected_dense_data: Vec<[Vec<f64>; 2]>,
+    pub expected_conv_data: Vec<(Vec<Vec<f64>>, Vec<f64>)>,
+    pub max_expected_dense_data: f64,
     pub nn_data: Vec<Vec<f64>>,
     pub max_nn_data: u64,
     pub padding: [f64; 2]
@@ -48,8 +49,9 @@ impl Widget {
             epochs: 0,
             cost_expiration: false,
             cost_expiration_epochs: 0,
-            expected_data: vec![],
-            max_expected_data: 0.0,
+            expected_dense_data: vec![],
+            expected_conv_data: vec![],
+            max_expected_dense_data: 0.0,
             nn_data: vec![],
             max_nn_data: 0,
             padding: [width *0.05, height * 0.05]
@@ -70,9 +72,13 @@ impl Widget {
         }   
     }
 
-    pub fn set_data(&mut self, data: Vec<[Vec<f64>; 2]>) {
-        self.expected_data = data;
-        self.max_expected_data = Self::get_max_output(&self.expected_data);
+    pub fn set_dense_data(&mut self, dense_data: Vec<[Vec<f64>; 2]>) {
+        self.expected_dense_data = dense_data;
+        self.max_expected_dense_data = Self::get_max_output(&self.expected_dense_data);
+    }
+
+    pub fn set_conv_data(&mut self, conv_data: Vec<(Vec<Vec<f64>>, Vec<f64>)>) {
+        self.expected_conv_data = conv_data;
     }
 
     pub fn set_cost_expiration(&mut self, expire: bool, epochs: usize) {
@@ -103,7 +109,7 @@ impl Widget {
         self.layers = layers;
         self.epochs += epochs;
         self.nn_data = nn_data;
-        self.max_nn_data = self.nn_data.iter().map(|x| (x[0] * 100_000.0) as u64).max().unwrap();
+        // self.max_nn_data = self.nn_data.iter().map(|x| (x[0] * 100_000.0) as u64).max().unwrap();
 
         if self.epochs % (self.cost_expiration_epochs + 1) == 0 && self.cost_expiration {
             if self.cost.len() != 0 {
@@ -114,14 +120,14 @@ impl Widget {
 
     pub fn draw_image(&mut self, ctx: Context, gl: &mut G2d, window_ctx: &mut G2dTextureContext) {
 
-        if self.expected_data.len() == 0 as usize || self.nn_data.len() == 0 as usize {
+        if self.expected_dense_data.len() == 0 as usize || self.nn_data.len() == 0 as usize {
             return;
         }
 
-        let expected_image = &self.expected_data;
+        let expected_image = &self.expected_dense_data;
         let nn_image = &self.nn_data;
 
-        let (w, h) = (28, 28);
+        let (w, h) = (65, 67);
         let mut img_i = 0;
 
         let base_image = ImageBuffer::from_fn(w, h, |x, y| {
@@ -138,14 +144,14 @@ impl Widget {
             Rgba([pix, pix, pix, 255]) // Varying colors in a gradient
         });
         
-        // Create a texture from the image data
+        // Create a texture from the image dense_data
         let output_texture = piston_window::Texture::from_image(
             window_ctx,
             &output_image,
             &TextureSettings::new(),
         ).unwrap();
 
-        // Create a texture from the image data
+        // Create a texture from the image dense_data
         let base_texture = piston_window::Texture::from_image(
             window_ctx,
             &base_image,
@@ -165,15 +171,15 @@ impl Widget {
     pub fn draw_output_graph(&mut self, ctx: Context, gl: &mut G2d) 
     {
 
-        if self.expected_data.len() == 0 as usize || self.nn_data.len() == 0 as usize {
+        if self.expected_dense_data.len() == 0 as usize || self.nn_data.len() == 0 as usize {
             return;
         }
         
-        let floor = self.coords[1] + self.height - self.padding[1] * 2.0;
+        let floor = self.coords[3] + self.height - self.padding[1];
         let wall = self.coords[0] + self.padding[0];
         let min_coord = [wall, floor];
-        let y_max_coord = [wall, self.coords[1] + self.padding[1]];
-        let x_max_coord = [self.coords[0] + self.width - self.padding[0], floor];
+        let y_max_coord = [wall, self.coords[1] + (self.padding[1] * 2.0)];
+        let x_max_coord = [self.coords[2] + self.width - self.padding[0], floor];
         line_from_to(OUTLINE, LINE_THICKNESS, y_max_coord, min_coord, ctx.transform, gl);
         line_from_to(OUTLINE, LINE_THICKNESS, x_max_coord, min_coord, ctx.transform, gl);
 
@@ -188,12 +194,12 @@ impl Widget {
 
         counter = x_range[0];
 
-        let expected_data = &self.expected_data;
+        let expected_dense_data = &self.expected_dense_data;
         let nn_data = &self.nn_data;
 
-        let max_expected_output = self.max_expected_data + 1.0;
+        let max_expected_output = self.max_expected_dense_data + 1.0;
         
-        let expected_y = (expected_data[0][1][0] + 1.0) / max_expected_output;
+        let expected_y = (expected_dense_data[0][1][0] + 1.0) / max_expected_output;
         let network_y = (nn_data[0][0] + 1.0) / max_expected_output;
 
         let mut last_expected_point = [y_max_coord[0], expected_y];
@@ -201,7 +207,7 @@ impl Widget {
 
         while counter < x_range[1] {
             let next_expected_x = y_max_coord[0] + ((counter / x_range[1]) * (x_max_coord[0] - y_max_coord[0]));
-            let next_expected_y =  x_max_coord[1] - ((expected_data[index][1][0] + 1.0) / max_expected_output) * (x_max_coord[1] - y_max_coord[1]);
+            let next_expected_y =  x_max_coord[1] - ((expected_dense_data[index][1][0] + 1.0) / max_expected_output) * (x_max_coord[1] - y_max_coord[1]);
             let next_expected_point = [next_expected_x, next_expected_y];
             if (next_expected_y < floor && next_expected_y > y_max_coord[1]) &&
                 (next_expected_x > wall && next_expected_x < x_max_coord[0])
