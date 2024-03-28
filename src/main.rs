@@ -1,36 +1,17 @@
 use ml_gui::{gui::GUI, widget::WidgetType};
-use ml_library::{layer::Layer, layer::LayerType::*, network::Network, convolution_params::PaddingType::*, activation::ActivationFunction::*};
+use ml_library::{layer::Layer, layer::LayerType::*, loss_function::LossType::*, network::Network, conv_params::PaddingType::*, activation::ActivationFunction::*};
 use image::*;
 use WidgetType::*;
 
 fn main() {
-    let layers: Vec<Layer> = vec![
-        Layer::conv(5, Valid, 1, ReLU),
-        Layer::conv(5, Valid, 1, ReLU),
-        Layer::conv(5, Valid, 1, ReLU),
-        Layer::conv(5, Valid, 1, ReLU),
-        Layer::conv(5, Valid, 1, ReLU),
-        Layer::dense([64, 32], Sigmoid),
-        Layer::dense([32, 16], Sigmoid),
-        Layer::dense([16, 9], Sigmoid),
-    ];
+    
 
-    let mut nn = Network::new(layers, 0.04, 2);
-    let sections: Vec<Vec<WidgetType>> = vec![
-        vec![CostPlot], 
-    ];
-
-    // nn.load_model("assets/models/6Model");
-
-    let mut app = GUI::new(nn);
-    app.set_sections(sections);
-    app.set_epochs_per_second(20);
-    app.set_cost_expiration(false, 20);
-    app.set_model_name("assets/models/cnnTest");
-    // sin_model(&mut app);
-    conv_digit_model(app);
-    // xor_model(&mut app);
-    // upscale_img(&mut nn, [500, 500]);
+    // nn.load_model("assets/models/cnnTanH");
+    // conv_digit_test(&mut nn);
+    conv_digit_model();
+    // xor_model(&mut app)
+    // dense_digit_model(app);
+    // softmax_test();
 }
 
 pub fn xor_model(app: &mut GUI) {
@@ -49,7 +30,7 @@ pub fn xor_model(app: &mut GUI) {
 pub fn dense_digit_model(mut app: GUI) {
     let mut dense_data: Vec<[Vec<f64>; 2]> = vec![];
 
-    let img = image::open("assets/img/kanji/Tile000.png").unwrap();
+    let img = image::open("assets/img/mnist/mnist_8.png").unwrap();
 
     let dims = img.dimensions();
 
@@ -68,10 +49,55 @@ pub fn dense_digit_model(mut app: GUI) {
     app.run();
 }
 
-pub fn conv_digit_model(mut app: GUI) {
-    let mut conv_data: Vec<(Vec<Vec<f64>>, Vec<f64>)> = vec![];
+pub fn conv_digit_test(mut nn: &mut Network) {
 
-    let max_nums = 9;
+    let num = 8;
+    let img = image::open(format!("assets/img/mnist/tMnist_{}.png", num)).unwrap();
+
+    let dims = img.dimensions();
+
+    let mut inputs = vec![];
+
+    for y in 0..dims.1 {
+        let mut row = vec![];
+        for x in 0..dims.0 {
+            let pixel = img.get_pixel(x, y).0;
+            let intensity = (pixel[0] / 3) + (pixel[1] / 3) + (pixel[2] / 3);
+            row.push(intensity as f64);
+        }
+        inputs.push(row);
+    }
+    println!("{}: {:?}", num, nn.conv_forward(vec![inputs]).iter()
+        .map(|x| (*x * 1_000_000.0) as u32)
+        .enumerate()
+        .max_by_key(|&(_, value)| value)
+        .map(|(index, _)| index + 1).unwrap()
+    );
+}
+
+pub fn conv_digit_model() {
+    let layers: Vec<Layer> = vec![
+        Layer::conv(7, Valid, 1, ReLU),
+        Layer::conv(7, Valid, 1, ReLU),
+        Layer::dense([256, 64], Sigmoid),
+        Layer::dense([64, 32], Sigmoid),
+        Layer::dense([32, 10], SoftMax),
+    ];
+
+    let mut nn = Network::new(layers, 0.0002, 2, CEL);
+    let sections: Vec<Vec<WidgetType>> = vec![
+        vec![CostPlot], 
+    ];
+
+    let mut app = GUI::new(nn);
+    app.set_sections(sections);
+    app.set_epochs_per_second(1);
+    app.set_cost_expiration(false, 20);
+    app.set_model_name("assets/models/cnnTest");
+
+    let mut conv_data: Vec<(Vec<Vec<Vec<f64>>>, Vec<f64>)> = vec![];
+
+    let max_nums = app.nn.get_nodes().last().unwrap().clone();
     for i in 0..max_nums {
         let img = image::open(format!("assets/img/mnist/mnist_{}.png", i)).unwrap();
 
@@ -84,14 +110,69 @@ pub fn conv_digit_model(mut app: GUI) {
             for x in 0..dims.0 {
                 let pixel = img.get_pixel(x, y).0;
                 let intensity = (pixel[0] / 3) + (pixel[1] / 3) + (pixel[2] / 3);
-                row.push(intensity as f64);
+                row.push(intensity as f64 / 255.0);
             }
             inputs.push(row);
         }
         let mut output = vec![0.0; max_nums];
         output[i] = 1.0;
-        conv_data.push((inputs, output));
+        conv_data.push((vec![inputs], output));
     }
+
+    app.set_conv_data(conv_data);
+    app.run();
+}
+
+pub fn softmax_test() {
+    let layers: Vec<Layer> = vec![
+        Layer::conv(3, Same, 1, ReLU),
+        Layer::dense([9, 6], TanH),
+        Layer::dense([6, 3], SoftMax),
+    ];
+
+    let nn = Network::new(layers, 0.02, 2, CEL);
+    let sections: Vec<Vec<WidgetType>> = vec![
+        vec![CostPlot], 
+    ];
+
+    let mut app = GUI::new(nn);
+    app.set_sections(sections);
+    app.set_epochs_per_second(1);
+    app.set_cost_expiration(false, 20);
+    app.set_model_name("assets/models/cnnTest");
+
+    let conv_data: Vec<(Vec<Vec<Vec<f64>>>, Vec<f64>)> = vec![
+        (
+            vec![
+                vec![
+                    vec![1.0, 0.0, 1.0],
+                    vec![0.0, 1.0, 0.0],
+                    vec![1.0, 0.0, 1.0],
+                ]
+            ],
+            vec![1.0, 0.0, 0.0]
+        ),
+        (
+            vec![
+                vec![
+                    vec![0.0, 1.0, 0.0],
+                    vec![1.0, 1.0, 1.0],
+                    vec![0.0, 1.0, 0.0],
+                ]
+            ],
+            vec![0.0, 1.0, 0.0]
+        ),
+        (
+            vec![
+                vec![
+                    vec![0.0, 0.0, 0.0],
+                    vec![0.0, 1.0, 0.0],
+                    vec![0.0, 0.0, 0.0],
+                ]
+            ],
+            vec![0.0, 0.0, 1.0]
+        ),
+    ];
 
     app.set_conv_data(conv_data);
     app.run();

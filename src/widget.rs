@@ -30,7 +30,7 @@ pub struct Widget {
     pub cost_expiration: bool,
     pub cost_expiration_epochs: usize,
     pub expected_dense_data: Vec<[Vec<f64>; 2]>,
-    pub expected_conv_data: Vec<(Vec<Vec<f64>>, Vec<f64>)>,
+    pub expected_conv_data: Vec<(Vec<Vec<Vec<f64>>>, Vec<f64>)>,
     pub max_expected_dense_data: f64,
     pub nn_data: Vec<Vec<f64>>,
     pub max_nn_data: u64,
@@ -77,7 +77,7 @@ impl Widget {
         self.max_expected_dense_data = Self::get_max_output(&self.expected_dense_data);
     }
 
-    pub fn set_conv_data(&mut self, conv_data: Vec<(Vec<Vec<f64>>, Vec<f64>)>) {
+    pub fn set_conv_data(&mut self, conv_data: Vec<(Vec<Vec<Vec<f64>>>, Vec<f64>)>) {
         self.expected_conv_data = conv_data;
     }
 
@@ -127,7 +127,8 @@ impl Widget {
         let expected_image = &self.expected_dense_data;
         let nn_image = &self.nn_data;
 
-        let (w, h) = (65, 67);
+        // let (w, h) = (65, 67);
+        let (w, h) = (28, 28);
         let mut img_i = 0;
 
         let base_image = ImageBuffer::from_fn(w, h, |x, y| {

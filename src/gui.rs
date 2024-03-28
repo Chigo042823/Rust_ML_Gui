@@ -24,7 +24,7 @@ pub struct GUI<'a> {
     pub sections: Vec<Section>,
     pub nn: Network,
     pub dense_data: Vec<[Vec<f64>; 2]>,
-    pub conv_data: Vec<(Vec<Vec<f64>>, Vec<f64>)>,
+    pub conv_data: Vec<(Vec<Vec<Vec<f64>>>, Vec<f64>)>,
     pub epochs_per_second: usize,
     pub epochs: usize,
     pub font: Font<'a>,
@@ -100,9 +100,14 @@ impl GUI<'_> {
         let wall = self.padding[0];
         let line_space = self.padding[1] * 4.0;
         let window_dims = self.window.draw_size();
+        let net_outputs = self.nn.get_nodes().last().unwrap().clone();
 
         self.window.draw_2d(evts, |ctx, gl, device| {
             clear([0.3, 0.3, 0.3, 1.0], gl);
+
+            for section in &mut self.sections {
+                section.render(ctx, gl, window_ctx);
+            }
 
         let _ = text::Text::new_color([1.0, 1.0, 1.0, 1.0], 40).round().draw(
             &"NetFix",
@@ -131,47 +136,8 @@ impl GUI<'_> {
             &ctx.draw_state,
             ctx.transform.trans(wall, (self.header + self.padding[1] * 4.0) + line_space * 2.0), gl
         );
-
-        for i in 0..6 {
-            let ans = self.nn.conv_forward(self.conv_data[i].0.clone());
-            let answer = ans.clone()
-                .iter()
-                .map(|x| (*x * 1_000_000.0) as u32)
-                .enumerate()
-                .max_by_key(|&(_, value)| value)
-                .map(|(index, _)| index).unwrap();
-            let _ = text::Text::new_color([1.0, 1.0, 1.0, 1.0], 18).draw(
-                &format!("{}: {}", i, answer),
-                &mut glyphs,
-                &ctx.draw_state,
-                ctx.transform.trans(wall, (self.header + self.padding[1] * 4.0) + line_space * (i + 3) as f64), gl
-            ); 
-            glyphs.factory.encoder.flush(device);
-        }
-
-        for i in 0..4 {
-            let ans = self.nn.conv_forward(self.conv_data[i + 5].0.clone());
-            let answer = ans.clone()
-                .iter()
-                .map(|x| (*x * 1_000_000.0) as u32)
-                .enumerate()
-                .max_by_key(|&(_, value)| value)
-                .map(|(index, _)| index + 1).unwrap();
-
-            let _ = text::Text::new_color([1.0, 1.0, 1.0, 1.0], 18).draw(
-                &format!("{}: {}", i + 6, answer),
-                &mut glyphs,
-                &ctx.draw_state,
-                ctx.transform.trans(wall + self.padding[0] * 4.0, (self.header + self.padding[1] * 4.0) + line_space * (i + 3) as f64), gl
-            ); 
-            glyphs.factory.encoder.flush(device);
-        }
-
         glyphs.factory.encoder.flush(device);
 
-            for i in 0..self.sections.len() {
-                self.sections[i].render(ctx, gl, window_ctx);
-            }
         });
     }
 
@@ -186,7 +152,7 @@ impl GUI<'_> {
         }
     }
 
-    pub fn set_conv_data(&mut self, conv_data: Vec<(Vec<Vec<f64>>, Vec<f64>)>) {
+    pub fn set_conv_data(&mut self, conv_data: Vec<(Vec<Vec<Vec<f64>>>, Vec<f64>)>) {
         self.conv_data = conv_data;
         for i in 0..self.sections.len() {
             let section = &mut self.sections[i];
@@ -215,18 +181,6 @@ impl GUI<'_> {
 
     pub fn run(&mut self) {
         let mut events = Events::new(EventSettings::new()).ups(60);
-        // thread::spawn(|| loop {
-        //     // Get memory stats
-        //     if let Some(usage) = memory_stats() {
-        //         println!("Physical memory usage: {}", usage.physical_mem / 100_000);
-        //         println!("Virtual memory usage: {}", usage.virtual_mem / 100_000);
-        //     } else {
-        //         println!("Couldn't get the current memory usage :(");
-        //     }
-    
-        //     // Sleep for a second
-        //     thread::sleep(Duration::from_secs(1));
-        // }); 
         while let Some(e) = events.next(&mut self.window) {
             if let Some(args) = e.render_args() {
                 let window_ctx = &mut self.window.create_texture_context();
