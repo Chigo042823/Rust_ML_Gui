@@ -9,6 +9,7 @@ use image::*;
 use piston_window::*;
 use rusttype::Font;
 use memory_stats::memory_stats;
+use std::process;
 use std::thread::{self, Thread};
 use std::time::Duration;
 use gfx_device_gl::Device;
@@ -249,6 +250,10 @@ impl GUI<'_> {
                                 self.will_train = true;
                             }
                         },
+                    Key::Escape => 
+                        {
+                            process::exit(0);
+                        }
                     _ => 
                         println!("No Function Associated With That Button"),
                 }
