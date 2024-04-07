@@ -201,11 +201,12 @@ impl GUI<'_> {
                         let weights = self.nn.get_weights();
                         let biases = self.nn.get_biases();
                         let nodes = self.nn.get_nodes();
-                        self.sections[i].set_architecture((weights, biases, nodes));
+                        let conv_outputs = self.nn.get_conv_outputs();
                         self.sections[i].update(
                             self.nn.cost, 
                             self.epochs_per_second, 
-                            nn_dense_data.clone()
+                            nn_dense_data.clone(),
+                            (weights, biases, nodes, conv_outputs)
                         );
                     }
                 }
@@ -307,44 +308,7 @@ impl GUI<'_> {
         }  
         new_image
     }
-
-    fn get_conv_network_img(&mut self) -> Vec<Vec<u8>> {
-
-        let width = 28;
-        let height = 28;
-        
-        let mut new_image: Vec<Vec<u8>> = vec![vec![0; width]; height];
-
-        let mut nn_data = vec![];
-        for y in 0..height {
-            let mut row = vec![];
-            for x in 0..width {
-                let x_coord = x as f64 / (width - 1) as f64;
-                let y_coord = y as f64 / (height - 1) as f64;
-                row.push(x_coord);                        
-                row.push(y_coord);                        
-            }
-            nn_data.push(row);
-        }  
-
-        let grid_size = 4;
-
-        // for y in 0..height {
-        //     if y + grid_size > height {
-        //         break;
-        //     }
-        //     for x in 0..width {
-        //         if x + grid_size > width {
-        //             break;
-        //         }
-        //         let mut inputs = nn_data[y..(y + grid_size)];
-        //         let int = (outputs[0] * 255.0) as u8;
-        //         new_image[y][x] = int;
-        //     }
-        // }
-        new_image
-    }
-
+    
     fn get_expected_img(&mut self) -> Vec<Vec<u8>> {
         
         let mut new_image: Vec<Vec<u8>> = vec![vec![0; 28]; 28];

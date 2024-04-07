@@ -16,7 +16,8 @@ pub enum WidgetType {
     CostPlot,
     Architecture,
     OutputImg,
-    OutputGraph
+    OutputGraph,
+    ConvArch
 }
 
 pub struct Widget {
@@ -25,7 +26,10 @@ pub struct Widget {
     pub height: f64,
     pub widget_type: WidgetType, 
     pub cost: Vec<f64>,
-    pub layers: (Vec<Vec<Vec<f64>>>, Vec<Vec<f64>>, Vec<usize>),
+    pub layers: (
+        (Vec<Vec<Vec<Vec<f64>>>>, Vec<Vec<Vec<f64>>>), 
+        (Vec<f64>, Vec<Vec<f64>>), 
+        Vec<usize>, Vec<Vec<Vec<Vec<f64>>>>),
     pub epochs: usize,
     pub cost_expiration: bool,
     pub cost_expiration_epochs: usize,
@@ -34,7 +38,8 @@ pub struct Widget {
     pub max_expected_dense_data: f64,
     pub nn_data: Vec<Vec<f64>>,
     pub max_nn_data: u64,
-    pub padding: [f64; 2]
+    pub padding: [f64; 2],
+    pub c2d: usize
 }
 
 impl Widget {
@@ -45,7 +50,7 @@ impl Widget {
             height: height,
             widget_type,
             cost: vec![],
-            layers: (vec![], vec![], vec![]),
+            layers: ((vec![], vec![]), (vec![], vec![]), vec![], vec![]),
             epochs: 0,
             cost_expiration: false,
             cost_expiration_epochs: 0,
@@ -54,7 +59,8 @@ impl Widget {
             max_expected_dense_data: 0.0,
             nn_data: vec![],
             max_nn_data: 0,
-            padding: [width *0.05, height * 0.05]
+            padding: [width *0.05, height * 0.05],
+            c2d: 0,
         }
     }
 
@@ -68,7 +74,8 @@ impl Widget {
             CostPlot => self.draw_costplot(ctx, gl),
             Architecture => self.draw_architecture(ctx, gl),
             OutputImg => self.draw_image(ctx, gl, window_ctx),
-            OutputGraph => self.draw_output_graph(ctx, gl)
+            OutputGraph => self.draw_output_graph(ctx, gl),
+            ConvArch => self.draw_conv_architecture(ctx, window_ctx, gl),
         }   
     }
 
@@ -97,7 +104,10 @@ impl Widget {
 
     pub fn update(&mut self, 
         cost: f64, 
-        layers: (Vec<Vec<Vec<f64>>>, Vec<Vec<f64>>, Vec<usize>),
+        layers: (
+            (Vec<Vec<Vec<Vec<f64>>>>, Vec<Vec<Vec<f64>>>), 
+            (Vec<f64>, Vec<Vec<f64>>), 
+            Vec<usize>, Vec<Vec<Vec<Vec<f64>>>>),
         epochs: usize,
         nn_data: Vec<Vec<f64>>
     ) {  
@@ -240,8 +250,8 @@ impl Widget {
         let min_coord = [wall, floor];
         let y_max_coord = [wall, self.coords[1] + (self.padding[1] * 2.0)];
         let x_max_coord = [self.coords[2] + self.width - self.padding[0], floor];
-        line_from_to(OUTLINE, LINE_THICKNESS, y_max_coord, min_coord, ctx.transform, gl);
-        line_from_to(OUTLINE, LINE_THICKNESS, x_max_coord, min_coord, ctx.transform, gl);
+        line_from_to(OUTLINE, LINE_THICKNESS * 1.5, y_max_coord, min_coord, ctx.transform, gl);
+        line_from_to(OUTLINE, LINE_THICKNESS * 1.5, x_max_coord, min_coord, ctx.transform, gl);
 
         let cost_count = cost.len() as f64;
 
@@ -264,16 +274,117 @@ impl Widget {
             let next_x = y_max_coord[0] + (((i + 1) as f64 / cost_count) * (x_max_coord[0] - y_max_coord[0]));
             let next_y =  x_max_coord[1] + ((cost[i] / max_cost) * (y_max_coord[1] - x_max_coord[1]));
             let next_point = [next_x, next_y];
-            line_from_to(line_color, LINE_THICKNESS, last_point, next_point, ctx.transform, gl);
+            line_from_to(line_color, LINE_THICKNESS * 1.5, last_point, next_point, ctx.transform, gl);
             last_point = next_point;
+        }
+    }
+
+    pub fn draw_conv_architecture(&mut self, ctx: Context, window_ctx: &mut G2dTextureContext, gl: &mut G2d) {
+
+        let layers = self.layers.clone();
+        let weights = layers.0.0;
+        let biases = layers.1.0;
+        let img = self.expected_conv_data[0].0.clone();
+        let layer_count = biases.len();
+        let channels = img.len();
+
+        let mut weight_color = [0.7, 0.7, 0.0, 1.0];
+
+        let floor = self.coords[1] + self.height - (self.padding[1] * 0.5);
+        let wall = self.coords[0] + (self.padding[0] * 2.0);
+        let y_center = floor - (self.height / 2.0);
+        let x_center = wall + (self.width / 2.0);
+
+        // let max_nodes = Self::get_max_nodes(&layer_nodes) as f64;
+        let network_width = self.width + -(self.padding[0] * 2.0);
+        let network_height = self.height + -(self.padding[1] * 2.0);
+        let layer_width = network_width / (layer_count as f64 * 2.0 + 1.0);
+        let layer_height = network_height / channels as f64;
+
+        let neuron_size =  100.0 * ((((self.width / ctx.get_view_size()[0]) + (self.height / ctx.get_view_size()[1])) / 2.0) / channels as f64);
+
+        for i in 0..channels { 
+            let inp_x = (x_center - (network_width / 2.0)) - neuron_size;
+            let y = (y_center - network_height / 2.0) + (i as f64 * layer_height) + neuron_size * 1.5;
+
+            let w = img[0][0].len();
+            let h = img[0].len();
+            let input_image = ImageBuffer::from_fn(w as u32, h as u32, |x, y| {
+                let pix = (img[i][y as usize][x as usize] * 255.0) as u8;
+                Rgba([pix, pix, pix, 255]) // Varying colors in a gradient
+            });
+
+            let output_texture = piston_window::Texture::from_image(
+                window_ctx,
+                &input_image,
+                &TextureSettings::new(),
+            ).unwrap();
+
+            let w_scale = neuron_size / w as f64;
+            let h_scale = neuron_size / h as f64;
+
+            piston_window::image(&output_texture, ctx.transform.trans(inp_x, y).scale(w_scale, h_scale), gl);
+
+            for j in 0..layer_count { //layers
+
+                let block_height = neuron_size * channels as f64;
+                let half_height = block_height / 2.0;
+
+                let x = (x_center - (network_width / 2.0)) + (j as f64 * (layer_width * 2.0)) + layer_width - neuron_size;
+                let next_x = (x_center - (network_width / 2.0)) + layer_width + (j as f64 * (layer_width * 2.0)) + layer_width - neuron_size;
+                
+                if weights[0].len() != 0 {
+                    let w = weights[j][i][0].len();
+                    let h = weights[j][i].len();
+
+                    let weight_image = ImageBuffer::from_fn(w as u32, h as u32, |x, y| {
+                        let pix = (weights[j][i][y as usize][x as usize] * 255.0) as u8;
+                        Rgba([255 - pix, pix, 255 - pix, 255]) // Varying colors in a gradient
+                    });
+
+                    let weight_texture = piston_window::Texture::from_image(
+                        window_ctx,
+                        &weight_image,
+                        &TextureSettings::new(),
+                    ).unwrap();
+
+                    let w_scale = neuron_size / w as f64;
+                    let h_scale = neuron_size / h as f64;
+
+                    piston_window::image(&weight_texture, ctx.transform.trans(x, y).scale(w_scale, h_scale), gl);
+                }
+                
+                let output = self.layers.3[j][0].clone();
+
+                let w = output[0].len();
+                let h = output.len();
+
+                let output_image = ImageBuffer::from_fn(w as u32, h as u32, |x, y| {
+                    let pix = (output[y as usize][x as usize] * 255.0) as u8;
+                    Rgba([pix, pix, pix, 255]) // Varying colors in a gradient
+                });
+
+                let output_image = piston_window::Texture::from_image(
+                    window_ctx,
+                    &output_image,
+                    &TextureSettings::new(),
+                ).unwrap();
+
+                let w_scale = neuron_size / w as f64;
+                let h_scale = neuron_size / h as f64;
+
+                piston_window::image(&output_image, ctx.transform.trans(next_x, y).scale(w_scale, h_scale), gl);
+            }
         }
     }
 
     pub fn draw_architecture(&mut self, ctx: Context, gl: &mut G2d) {
 
-        let layer_nodes = &self.layers.2;
-        let weights = &self.layers.0;
-        let biases = &self.layers.1;
+        let layers = self.layers.clone();
+
+        let layer_nodes = layers.2;
+        let weights = layers.0.1;
+        let biases = layers.1.1;
 
         let mut neuron_color = [0.7, 0.7, 0.0, 1.0];
         let mut weight_color = [0.7, 0.7, 0.0, 1.0];

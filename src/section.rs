@@ -13,7 +13,6 @@ pub struct Section {
     pub height: f64,
     pub widgets: Vec<Widget>,
     pub cost: f64,
-    pub layers: (Vec<Vec<Vec<f64>>>, Vec<Vec<f64>>, Vec<usize>),
     pub padding: [f64; 2]
 }
 
@@ -25,14 +24,9 @@ impl Section {
             height,
             widgets: vec![],
             cost: 0.0,
-            layers: (vec![], vec![], vec![]),
             padding: [width * 0.05, height * 0.05],
         }
     }
-
-    pub fn set_architecture(&mut self, layers: (Vec<Vec<Vec<f64>>>, Vec<Vec<f64>>, Vec<usize>)) {
-        self.layers = layers;
-    } 
 
     pub fn set_widgets(&mut self, widgets: &Vec<WidgetType>) {
         let widget_count = widgets.len();
@@ -67,13 +61,15 @@ impl Section {
     pub fn update(&mut self, 
         cost: f64, 
         epochs: usize, 
-        nn_data: Vec<Vec<f64>>
+        nn_data: Vec<Vec<f64>>,
+        layer_data: ((Vec<Vec<Vec<Vec<f64>>>>, Vec<Vec<Vec<f64>>>), (Vec<f64>, Vec<Vec<f64>>), Vec<usize>, Vec<Vec<Vec<Vec<f64>>>>),
     ) {
         for i in 0..self.widgets.len() {
             let widget = &mut self.widgets[i];
-            let mut layers: (Vec<Vec<Vec<f64>>>, Vec<Vec<f64>>, Vec<usize>) = (vec![], vec![], vec![]);
-            if widget.widget_type == WidgetType::Architecture {
-                layers = self.layers.clone();
+            let mut layers= ((vec![], vec![]), (vec![], vec![]), vec![], vec![]);
+            if widget.widget_type == WidgetType::Architecture ||
+                widget.widget_type == WidgetType::ConvArch {
+                layers = layer_data.clone();
             }
             widget.update(
                 cost, 

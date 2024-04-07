@@ -8,8 +8,8 @@ fn main() {
 
     // nn.load_model("assets/models/cnnTanH");
     // conv_digit_test();
-    // conv_digit_model();
-    xor_model()
+    conv_digit_model();
+    // xor_model()
     // dense_digit_model(app);
     // softmax_test();
 }
@@ -18,13 +18,13 @@ pub fn xor_model() {
 
     let layers: Vec<Layer> = vec![
         Layer::dense([2, 3], Sigmoid),
-        Layer::dense([3, 4], Sigmoid),
-
+        Layer::dense([3, 2], Sigmoid),
     ];
 
-    let mut nn = Network::new(layers, 0.2, 2, CEL);
+    let mut nn = Network::new(layers, 0.5, 2, MSE);
     let sections: Vec<Vec<WidgetType>> = vec![
         vec![CostPlot], 
+        vec![Architecture]
     ];
 
     let mut app = GUI::new(nn);
@@ -34,10 +34,10 @@ pub fn xor_model() {
     app.set_model_name("assets/models/XOR");
 
     let dense_data: Vec<[Vec<f64>; 2]> = vec![
-        [vec![1.0, 0.0], vec![0.0, 1.0, 0.0, 0.0]],
-        [vec![0.0, 0.0], vec![1.0, 0.0, 0.0, 0.0]],
-        [vec![1.0, 1.0], vec![1.0, 0.0, 0.0, 0.0]],
-        [vec![0.0, 1.0], vec![0.0, 1.0, 0.0, 0.0]],
+        [vec![1.0, 0.0], vec![0.0, 1.0]],
+        [vec![0.0, 0.0], vec![1.0, 0.0]],
+        [vec![1.0, 1.0], vec![1.0, 0.0]],
+        [vec![0.0, 1.0], vec![0.0, 1.0]],
     ]; 
 
     app.set_dense_data(dense_data);
@@ -96,21 +96,21 @@ pub fn conv_digit_test() {
 
 pub fn conv_digit_model() {
     let layers: Vec<Layer> = vec![
-        Layer::conv(12, Valid, 1, ReLU),
-        Layer::conv(12, Valid, 1, ReLU),
-        Layer::dense([36, 40], ReLU),
-        Layer::dense([40, 40], TanH),
-        Layer::dense([40, 10], SoftMax),
+        Layer::conv(3, Valid, 1, ReLU),
+        Layer::pool(2, 2),
+        Layer::pool(3, 2),
+        Layer::dense([36, 32], Sigmoid),
+        Layer::dense([32, 10], SoftMax),
     ];
 
-    let mut nn = Network::new(layers, 0.02, 2, CEL);
+    let mut nn = Network::new(layers, 0.002, 6, CEL);
     let sections: Vec<Vec<WidgetType>> = vec![
-        vec![CostPlot], 
+        vec![ConvArch], 
     ];
 
     let mut app = GUI::new(nn);
     app.set_sections(sections);
-    app.set_epochs_per_second(1);
+    app.set_epochs_per_second(20);
     app.set_cost_expiration(false, 20);
     app.set_model_name("assets/models/cnnTest");
 
